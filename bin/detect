@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+echo "Feelgood" && exit 0
+

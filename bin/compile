@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+export_env_dir "$3"
+
+export_env_dir() {
+    env_dir=$1
+    blacklist_regex=${3:-'^(PATH|GIT_DIR|CPATH|CPPATH|LD_PRELOAD|LIBRARY_PATH|LD_LIBRARY_PATH)$'}
+    if [ -d "$env_dir" ]; then
+        for e in $(ls $env_dir); do
+            echo "$e" | grep -qvE "$blacklist_regex" &&
+            export "$e=$(cat $env_dir/$e)"
+            :
+        done
+    fi
+}
+
+# install PhraseApp
+echo "-----> Installing PhraseApp"
+HOME=$BUILD_DIR gem install phrase --user-install --no-rdoc --no-ri
+
+if [ -n ${PHRASEAPP_TOKEN} ]
+then
+	echo "-----> Getting current locales from PhraseApp ..."
+	pushd ${BUILD_DIR}/src/Feelgood/Bundle/LanguageBundle/Resources/translations/
+		PHRASE_API_SKIP_SSL_VALIDATION=1 phrase pull --target=./ --secret=${PHRASEAPP_TOKEN} --include-empty-translations --format=gettext
+		if [ -f "de/phrase.po" ]
+		then
+			mv de/phrase.po messages.de.po
+		fi
+	popd  > /dev/null
+fi
+
+# Set custom buildtime
+if [ -f "app/config/build_time" ]
+then
+	date -u +%s > app/config/build_time
+fi
+
+if [ -f "${BUILD_DIR}/app/config/config_translation.yml" ]
+then
+	echo "-------> Clearing cache: app/console cache:clear ${SF_DEBUG} --env=translation"
+	php  -dmemory_limit=256M ${BUILD_DIR}/app/console cache:clear ${SF_DEBUG} --no-interaction --env=translation
+fi	
+
+if [ -f "${BUILD_DIR}/app/config/config_translation.yml" ]
+then
+	APP_DIR="/app"
+	echo "-----> Inplace replacment of $BUILD_DIR to $APP_DIR"
+	find $BUILD_DIR/app/cache/translation -type f -exec sed -i "s@$BUILD_DIR@$APP_DIR@g" {} \; | indent
+	grep $BUILD_DIR/app/cache/translation -r . && error "Could find some '$BUILD_DIR' :/ "
+fi	
